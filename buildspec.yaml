@@ -1,0 +1,34 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+            - echo Logging in to Amazon ECR...
+            - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 761317711277.dkr.ecr.us-east-1.amazonaws.com
+            - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+            - IMAGE_TAG=${COMMIT_HASH:=latest}
+  build:
+    commands:
+            - echo Build started on `date`
+            - echo Building backend...
+            - docker build -t devbank-backend ./backend
+            - docker tag devbank-backend:latest 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-backend:$IMAGE_TAG
+            - docker tag devbank-backend:latest 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-backend:latest
+            - echo Building frontend...
+            - docker build -t devbank-frontend ./frontend
+            - docker tag devbank-frontend:latest 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-frontend:$IMAGE_TAG
+            - docker tag devbank-frontend:latest 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-frontend:latest
+  post_build:
+    commands:
+            - echo Pushing images...
+            - docker push 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-backend:$IMAGE_TAG
+            - docker push 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-backend:latest
+            - docker push 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-frontend:$IMAGE_TAG
+            - docker push 761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-frontend:latest
+            - echo Writing imagedefinitions...
+            - printf '[{"name":"backend","imageUri":"761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-backend:%s"},{"name":"frontend","imageUri":"761317711277.dkr.ecr.us-east-1.amazonaws.com/devbank-frontend:%s"}]' $IMAGE_TAG $IMAGE_TAG > imagedefinitions.json
+artifacts:
+  files:
+        - imagedefinitions.json
+        - appspec.yaml
+        - taskdef.json
