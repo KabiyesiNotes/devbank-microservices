@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+frontend/build/
+*/build/
+
+# Logs & OS
+*.log
+npm-debug.log*
+.DS_Store
+.env
+.env.local
+*.swp
+*~
+
+# Docker
+.docker/
