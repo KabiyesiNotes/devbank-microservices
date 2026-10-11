@@ -1,8 +1,8 @@
 {
   "containerDefinitions": [
     {
- "<IMAGE1_NAME>"
- "<IMAGE1_NAME>"
+      "name": "devbank-frontend",
+      "image": "<IMAGE1_NAME>",
       "cpu": 0,
       "portMappings": [
         {
@@ -23,7 +23,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
- "<IMAGE1_NAME>"
+          "awslogs-group": "/ecs/devbank-frontend",
           "awslogs-region": "us-east-1",
           "awslogs-stream-prefix": "ecs"
         }
@@ -41,7 +41,7 @@
       "systemControls": []
     }
   ],
- "<IMAGE1_NAME>"
+  "family": "devbank-frontend",
   "executionRoleArn": "arn:aws:iam::293355475624:role/ecsTaskExecutionRole",
   "networkMode": "awsvpc",
   "volumes": [],
