@@ -109,11 +109,11 @@ phases:
       # can fan out to two separate ECS deploy actions.
       - echo "Writing imagedefinitions files..."
 
-      - printf '[{"name":"backend","imageUri":"%s"}]' \
+      - printf '[{"name":"devbank-backend","imageUri":"%s"}]' \
             "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" \
             > imagedefinitions-backend.json
 
-      - printf '[{"name":"frontend","imageUri":"%s"}]' \
+      - printf '[{"name":"devbank-frontend","imageUri":"%s"}]' \
             "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" \
             > imagedefinitions-frontend.json
 
