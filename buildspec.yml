@@ -1,122 +1,24 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# buildspec.yml – AWS CodeBuild build specification
-#
-# Pipeline: GitHub → CodePipeline → CodeBuild → Amazon ECR
-#
-# Required CodeBuild environment variables (set in the project / pipeline):
-#   AWS_DEFAULT_REGION   – e.g. us-east-1
-#   AWS_ACCOUNT_ID       – resolved dynamically via aws sts get-caller-identity
-#                          (do NOT hardcode)
-#   FRONTEND_REPOSITORY  – ECR repository name, e.g. devbank-frontend
-#   BACKEND_REPOSITORY   – ECR repository name, e.g. devbank-backend
-#
-# The CodeBuild service role must have permissions for:
-#   ecr:GetAuthorizationToken
-#   ecr:BatchCheckLayerAvailability
-#   ecr:GetDownloadUrlForLayer
-#   ecr:BatchGetImage
-#   ecr:PutImage
-#   ecr:InitiateLayerUpload
-#   ecr:UploadLayerPart
-#   ecr:CompleteLayerUpload
-# ─────────────────────────────────────────────────────────────────────────────
 version: 0.2
-
 env:
   variables:
-    # These are fallback defaults; override via CodeBuild project environment.
     FRONTEND_REPOSITORY: devbank-frontend
-    BACKEND_REPOSITORY:  devbank-backend
-
+    BACKEND_REPOSITORY: devbank-backend
 phases:
-
-  # ── Pre-build: resolve account ID, authenticate to ECR ───────────────────
   pre_build:
     commands:
-      - echo "=== Pre-Build Phase ==="
-      - echo "Resolving AWS Account ID..."
       - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-      - echo "AWS Account ID: $AWS_ACCOUNT_ID"
-      - echo "AWS Region: $AWS_DEFAULT_REGION"
-
-      # Build the ECR registry URL
       - export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
-      - echo "ECR Registry: $ECR_REGISTRY"
-
-      # Create a unique image tag from the Git commit hash (short form)
-      # Falls back to 'latest' if CODEBUILD_RESOLVED_SOURCE_VERSION is not set
       - export IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:0:8}
       - export IMAGE_TAG=${IMAGE_TAG:-latest}
-      - echo "Image Tag: $IMAGE_TAG"
-
-      # Authenticate Docker to Amazon ECR
-      - echo "Authenticating to Amazon ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
-          docker login --username AWS --password-stdin $ECR_REGISTRY
-      - echo "ECR authentication successful."
-
-  # ── Build: compile backend, run tests, build Docker images ───────────────
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
   build:
     commands:
-      - echo "=== Build Phase ==="
-
-      # ── Backend ────────────────────────────────────────────────────────────
-      - echo "Running backend tests..."
-      - cd backend
-      - mvn clean test -B
-      - echo "Backend tests passed."
-
-      - echo "Building backend Docker image..."
-      - docker build -t $BACKEND_REPOSITORY:$IMAGE_TAG .
-      - docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG
-      - docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
-      - echo "Backend image built."
-      - cd ..
-
-      # ── Frontend ───────────────────────────────────────────────────────────
-      - echo "Building frontend Docker image..."
-      - cd frontend
-      - docker build -t $FRONTEND_REPOSITORY:$IMAGE_TAG .
-      - docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG
-      - docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
-      - echo "Frontend image built."
-      - cd ..
-
-  # ── Post-build: push images to ECR, write artifact files ─────────────────
+      - cd backend && mvn clean test -B && docker build -t $BACKEND_REPOSITORY:$IMAGE_TAG. && docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG && docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:latest && cd..
+      - cd frontend && docker build -t $FRONTEND_REPOSITORY:$IMAGE_TAG. && docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG && docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest && cd..
   post_build:
     commands:
-      - echo "=== Post-Build Phase ==="
-
-      # ── Push backend ───────────────────────────────────────────────────────
-      - echo "Pushing backend image to ECR..."
-      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG
-      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
-      - echo "Backend image pushed."
-
-      # ── Push frontend ──────────────────────────────────────────────────────
-      - echo "Pushing frontend image to ECR..."
-      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG
-      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
-      - echo "Frontend image pushed."
-
-      # ── Write imagedefinitions.json for CodeDeploy / ECS rolling deploy ───
-      # This artifact tells CodePipeline which image to deploy to each ECS
-      # container.  Adjust container names to match your ECS task definitions.
-      - echo "Writing imagedefinitions.json..."
-      - |
-        printf '[
-          {"name":"devbank-backend","imageUri":"%s"},
-          {"name":"devbank-frontend","imageUri":"%s"}
-        ]' \
-          "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" \
-          "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" \
-          > imagedefinitions.json
-      - cat imagedefinitions.json
-      - echo "Build complete."
-
-# ── Artifacts ────────────────────────────────────────────────────────────────
-# imagedefinitions.json is consumed by the CodeDeploy / ECS deploy action
-# in the CodePipeline pipeline.
+      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG && docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
+      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG && docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
+      - printf '[{"name":"devbank-backend","imageUri":"%s"},{"name":"devbank-frontend","imageUri":"%s"}]' "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" > imagedefinitions.json && cat imagedefinitions.json
 artifacts:
-  files:
-    - imagedefinitions.json
+  files: [imagedefinitions.json]
