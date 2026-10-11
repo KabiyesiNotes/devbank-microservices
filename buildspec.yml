@@ -8,17 +8,30 @@ phases:
     commands:
       - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
       - export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
-      - export IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:0:8}
-      - export IMAGE_TAG=${IMAGE_TAG:-latest}
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - export IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:-latest}"
+      - export IMAGE_TAG="$(echo "$IMAGE_TAG" | cut -c1-8)"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
   build:
     commands:
-      - cd backend && mvn clean test -B && docker build -t $BACKEND_REPOSITORY:$IMAGE_TAG. && docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG && docker tag $BACKEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$BACKEND_REPOSITORY:latest && cd..
-      - cd frontend && docker build -t $FRONTEND_REPOSITORY:$IMAGE_TAG. && docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG && docker tag $FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest && cd..
+      - mvn -f backend/pom.xml clean test -B
+      - docker build -t "$BACKEND_REPOSITORY:$IMAGE_TAG" -f backend/Dockerfile backend
+      - docker build -t "$FRONTEND_REPOSITORY:$IMAGE_TAG" -f frontend/Dockerfile frontend
+      - docker tag "$BACKEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG"
+      - docker tag "$FRONTEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG"
+      - docker tag "$BACKEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$BACKEND_REPOSITORY:latest"
+      - docker tag "$FRONTEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$FRONTEND_REPOSITORY:latest"
   post_build:
     commands:
-      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG && docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
-      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG && docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
-      - printf '[{"name":"devbank-backend","imageUri":"%s"},{"name":"devbank-frontend","imageUri":"%s"}]' "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" > imagedefinitions.json && cat imagedefinitions.json
+      - docker push "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG"
+      - docker push "$ECR_REGISTRY/$BACKEND_REPOSITORY:latest"
+      - docker push "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG"
+      - docker push "$ECR_REGISTRY/$FRONTEND_REPOSITORY:latest"
+      - printf '[{"name":"devbank-backend","imageUri":"%s"}]' "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" > imagedefinitions-backend.json
+      - printf '{"ImageURI":"%s"}' "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" > imageDetail.json
+      - printf '[{"name":"devbank-backend","imageUri":"%s"},{"name":"devbank-frontend","imageUri":"%s"}]' "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" > imagedefinitions.json
 artifacts:
-  files: [imagedefinitions.json]
+  files:
+    - imagedefinitions.json
+    - imagedefinitions-backend.json
+    - imageDetail.json
+  discard-paths: yes
