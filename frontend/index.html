@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevBank Inventory Management System</title>
+
+  <!--
+    env-config.js is generated at container start-up by docker-entrypoint.sh.
+    It exposes window.ENV.BACKEND_URL so that no backend hostname is hardcoded
+    into this file.  For local Docker Compose runs the value will be
+    "http://backend:8080".  For AWS ECS it will be the internal service
+    discovery endpoint supplied through the task definition environment.
+  -->
+  <script src="/env-config.js"></script>
+
+  <style>
+    /* ── Reset & base ────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: #fff;
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    }
+
+    header .logo {
+      font-size: 2rem;
+      line-height: 1;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+    }
+
+    header p.subtitle {
+      font-size: .85rem;
+      opacity: .75;
+      margin-top: .15rem;
+    }
+
+    /* ── Main layout ─────────────────────────────────────────────────── */
+    main {
+      max-width: 1100px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    /* ── Card ────────────────────────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #0f3460;
+      margin-bottom: 1rem;
+      padding-bottom: .5rem;
+      border-bottom: 2px solid #e8ecf0;
+    }
+
+    /* ── Status bar ──────────────────────────────────────────────────── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-size: .9rem;
+      color: #555;
+      margin-bottom: .5rem;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #aaa;
+      flex-shrink: 0;
+      transition: background .3s;
+    }
+    .status-dot.ok   { background: #22c55e; }
+    .status-dot.warn { background: #f59e0b; }
+    .status-dot.err  { background: #ef4444; }
+
+    /* ── Button ──────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .6rem 1.4rem;
+      border: none;
+      border-radius: 6px;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .1s, box-shadow .1s, background .2s;
+    }
+    .btn:active { transform: scale(.97); }
+
+    .btn-primary {
+      background: #0f3460;
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(15,52,96,.35);
+    }
+    .btn-primary:hover { background: #1a4e8a; }
+
+    .btn-secondary {
+      background: #e8ecf0;
+      color: #333;
+    }
+    .btn-secondary:hover { background: #d4dae0; }
+
+    .btn:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+
+    /* ── Spinner ─────────────────────────────────────────────────────── */
+    .spinner {
+      display: none;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Alert ───────────────────────────────────────────────────────── */
+    .alert {
+      padding: .85rem 1.1rem;
+      border-radius: 6px;
+      font-size: .9rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .alert-error {
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+    }
+    .alert-success {
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      color: #166534;
+    }
+
+    /* ── Table ───────────────────────────────────────────────────────── */
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .92rem;
+    }
+
+    thead tr {
+      background: #f8fafc;
+    }
+
+    th {
+      text-align: left;
+      padding: .75rem 1rem;
+      font-weight: 600;
+      color: #374151;
+      border-bottom: 2px solid #e5e7eb;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: .7rem 1rem;
+      border-bottom: 1px solid #f0f2f5;
+      color: #374151;
+    }
+
+    tbody tr:hover { background: #f8fafc; }
+    tbody tr:last-child td { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      padding: .2rem .65rem;
+      border-radius: 99px;
+      font-size: .78rem;
+      font-weight: 600;
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .qty { font-weight: 700; }
+    .price { font-weight: 600; color: #0f3460; }
+
+    /* ── Empty / loading placeholder ────────────────────────────────── */
+    .placeholder {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #9ca3af;
+    }
+    .placeholder .icon { font-size: 2.5rem; margin-bottom: .5rem; }
+
+    /* ── Summary pills ───────────────────────────────────────────────── */
+    .summary-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-top: 1rem;
+    }
+
+    .summary-pill {
+      background: #f0f2f5;
+      border-radius: 8px;
+      padding: .6rem 1.2rem;
+      text-align: center;
+      flex: 1;
+      min-width: 130px;
+    }
+
+    .summary-pill .val {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #0f3460;
+    }
+
+    .summary-pill .lbl {
+      font-size: .78rem;
+      color: #6b7280;
+      margin-top: .1rem;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      font-size: .8rem;
+      color: #9ca3af;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">🏦</div>
+    <div>
+      <h1>DevBank Inventory Management System</h1>
+      <p class="subtitle">Microservices Demo · AWS ECS Fargate</p>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- Backend connection status -->
+    <div class="card">
+      <div class="card-title">Backend Service Status</div>
+      <div class="status-row">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Not checked yet</span>
+      </div>
+      <small style="color:#9ca3af" id="backendUrlDisplay"></small>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-title">Inventory Controls</div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="loadBtn" onclick="loadInventory()">
+          <span>📦</span>
+          <span>Load Inventory</span>
+          <div class="spinner" id="loadSpinner"></div>
+        </button>
+        <button class="btn btn-secondary" id="refreshBtn" onclick="checkHealth()">
+          🔄 Check Backend Health
+        </button>
+        <button class="btn btn-secondary" onclick="clearTable()">
+          🗑 Clear
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert area -->
+    <div class="alert alert-error"   id="alertError"></div>
+    <div class="alert alert-success" id="alertSuccess"></div>
+
+    <!-- Summary pills (hidden until data loads) -->
+    <div id="summarySection" style="display:none">
+      <div class="card">
+        <div class="card-title">Summary</div>
+        <div class="summary-row">
+          <div class="summary-pill">
+            <div class="val" id="sumItems">–</div>
+            <div class="lbl">Total Items</div>
+          </div>
+          <div class="summary-pill">
+            <div class="val" id="sumQty">–</div>
+            <div class="lbl">Total Units</div>
+          </div>
+          <div class="summary-pill">
+            <div class="val" id="sumCategories">–</div>
+            <div class="lbl">Categories</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory table -->
+    <div class="card">
+      <div class="card-title">Inventory Items</div>
+      <div id="alertArea"></div>
+      <div class="table-wrapper">
+        <table id="inventoryTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Quantity</th>
+              <th>Unit Price</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryBody">
+            <tr>
+              <td colspan="5">
+                <div class="placeholder">
+                  <div class="icon">📦</div>
+                  <div>Click <strong>Load Inventory</strong> to fetch data from the backend.</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    DevBank Inventory Management System &nbsp;|&nbsp;
+    DevOps Course-End Project &nbsp;|&nbsp;
+    Powered by Spring Boot + Docker + AWS ECS Fargate
+  </footer>
+
+  <script>
+    // ── Runtime configuration ──────────────────────────────────────────────
+    //
+    // window.ENV.BACKEND_URL is written by docker-entrypoint.sh from the
+    // BACKEND_URL environment variable at container start-up.
+    //
+    // Two operating modes:
+    //
+    //  1. BACKEND_URL is empty (local Docker Compose)
+    //     The browser calls same-origin Nginx proxy paths:
+    //       /api/proxy/health     → Nginx → backend:8080/health
+    //       /api/proxy/inventory  → Nginx → backend:8080/api/inventory
+    //     This avoids the browser trying to resolve the internal Docker
+    //     hostname "backend" which only exists inside the Docker network.
+    //
+    //  2. BACKEND_URL is set (e.g. AWS ECS: http://internal-alb.example.com)
+    //     The browser calls the backend URL directly, same as before.
+    //
+    const _rawUrl = (window.ENV && window.ENV.BACKEND_URL)
+      ? window.ENV.BACKEND_URL.trim()
+      : '';
+
+    // useProxy = true  → call /api/proxy/* on same origin
+    // useProxy = false → call BACKEND_URL directly
+    const useProxy   = (_rawUrl === '');
+    const BACKEND_URL = useProxy ? '' : _rawUrl.replace(/\/$/, '');
+
+    // Resolved endpoint paths
+    const HEALTH_URL    = useProxy ? '/api/proxy/health'    : BACKEND_URL + '/health';
+    const INVENTORY_URL = useProxy ? '/api/proxy/inventory' : BACKEND_URL + '/api/inventory';
+
+    // ── Display the backend URL in the UI ──────────────────────────────────
+    document.getElementById('backendUrlDisplay').textContent =
+      useProxy
+        ? 'Backend URL: (via Nginx proxy /api/proxy/*)'
+        : 'Backend URL: ' + BACKEND_URL;
+
+    // ── Helper: show / hide alerts ─────────────────────────────────────────
+    function showError(msg) {
+      const el = document.getElementById('alertError');
+      el.textContent = '⚠️  ' + msg;
+      el.style.display = 'block';
+      document.getElementById('alertSuccess').style.display = 'none';
+    }
+
+    function showSuccess(msg) {
+      const el = document.getElementById('alertSuccess');
+      el.textContent = '✅  ' + msg;
+      el.style.display = 'block';
+      document.getElementById('alertError').style.display = 'none';
+    }
+
+    function clearAlerts() {
+      document.getElementById('alertError').style.display   = 'none';
+      document.getElementById('alertSuccess').style.display = 'none';
+    }
+
+    // ── Health check ───────────────────────────────────────────────────────
+    async function checkHealth() {
+      const dot  = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+
+      dot.className  = 'status-dot warn';
+      text.textContent = 'Checking…';
+
+      try {
+        const res = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const data = await res.json();
+          dot.className    = 'status-dot ok';
+          text.textContent = '✅  Backend is ' + (data.status || 'healthy');
+        } else {
+          dot.className    = 'status-dot err';
+          text.textContent = '❌  Backend returned HTTP ' + res.status;
+        }
+      } catch (err) {
+        dot.className    = 'status-dot err';
+        text.textContent = '❌  Cannot reach backend at ' + (useProxy ? '/api/proxy/health' : BACKEND_URL);
+      }
+    }
+
+    // ── Load inventory ─────────────────────────────────────────────────────
+    async function loadInventory() {
+      const btn     = document.getElementById('loadBtn');
+      const spinner = document.getElementById('loadSpinner');
+      const tbody   = document.getElementById('inventoryBody');
+
+      btn.disabled          = true;
+      spinner.style.display = 'block';
+      clearAlerts();
+
+      try {
+        const res = await fetch(INVENTORY_URL, { signal: AbortSignal.timeout(8000) });
+
+        if (!res.ok) {
+          throw new Error('Server responded with HTTP ' + res.status);
+        }
+
+        const items = await res.json();
+
+        if (!Array.isArray(items) || items.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5">
+            <div class="placeholder"><div class="icon">🔍</div><div>No inventory items found.</div></div>
+          </td></tr>`;
+          showError('Backend returned an empty inventory list.');
+          return;
+        }
+
+        // Populate table
+        tbody.innerHTML = items.map((item, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><strong>${escapeHtml(item.name)}</strong></td>
+            <td><span class="badge">${escapeHtml(item.category)}</span></td>
+            <td class="qty">${item.quantity != null ? item.quantity.toLocaleString() : '–'}</td>
+            <td class="price">$${item.price != null ? item.price.toFixed(2) : '–'}</td>
+          </tr>
+        `).join('');
+
+        // Summary
+        const totalQty = items.reduce((s, i) => s + (i.quantity || 0), 0);
+        const categories = new Set(items.map(i => i.category)).size;
+
+        document.getElementById('sumItems').textContent      = items.length;
+        document.getElementById('sumQty').textContent        = totalQty.toLocaleString();
+        document.getElementById('sumCategories').textContent = categories;
+        document.getElementById('summarySection').style.display = 'block';
+
+        showSuccess('Loaded ' + items.length + ' inventory items from the backend.');
+
+        // Update health indicator
+        const dot  = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        dot.className    = 'status-dot ok';
+        text.textContent = '✅  Backend is healthy – data loaded successfully';
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5">
+          <div class="placeholder">
+            <div class="icon">❌</div>
+            <div>Failed to load inventory data.</div>
+          </div>
+        </td></tr>`;
+        showError(
+          'Could not reach the backend at ' + INVENTORY_URL + '. ' +
+          'Make sure the backend container is running. (' + err.message + ')'
+        );
+        document.getElementById('statusDot').className   = 'status-dot err';
+        document.getElementById('statusText').textContent = '❌  Backend unreachable';
+      } finally {
+        btn.disabled          = false;
+        spinner.style.display = 'none';
+      }
+    }
+
+    // ── Clear ──────────────────────────────────────────────────────────────
+    function clearTable() {
+      document.getElementById('inventoryBody').innerHTML = `
+        <tr><td colspan="5">
+          <div class="placeholder">
+            <div class="icon">📦</div>
+            <div>Click <strong>Load Inventory</strong> to fetch data from the backend.</div>
+          </div>
+        </td></tr>`;
+      document.getElementById('summarySection').style.display = 'none';
+      clearAlerts();
+    }
+
+    // ── Security: escape HTML to prevent XSS ──────────────────────────────
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.appendChild(document.createTextNode(str == null ? '' : String(str)));
+      return div.innerHTML;
+    }
+
+    // ── Auto health-check on page load ────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', checkHealth);
+  </script>
+
+</body>
+</html>

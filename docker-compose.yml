@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DevBank Inventory Management System – Docker Compose
+#
+# Two services:
+#   backend   – Spring Boot REST API   (port 8080)
+#   frontend  – Nginx static UI        (port 3000)
+#
+# Usage:
+#   docker compose build          # build both images
+#   docker compose up -d          # start in detached mode
+#   docker compose logs -f        # follow logs
+#   docker compose down           # stop and remove containers
+#   docker compose down -v        # also remove volumes
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: devbank-backend:latest
+    container_name: devbank-backend
+    ports:
+      - "8081:8080"        # Exposed to host for direct API testing (8080 is in use by Jenkins)
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: devbank-frontend:latest
+    container_name: devbank-frontend
+    ports:
+      - "3001:3000"        # Exposed to host (3000 is in use by Grafana) – open http://localhost:3001
+    environment:
+      # BACKEND_URL controls how the browser-side JavaScript reaches the backend.
+      #
+      # Empty string  → browser uses the same origin it loaded from (localhost:3001),
+      #                  and Nginx proxies /api/proxy/* → backend:8080 inside Docker.
+      #                  This is correct for local Docker Compose runs.
+      #
+      # http://backend:8080 → only works inside Docker network (not from a browser).
+      #
+      # https://api.example.com → use for ECS when the backend has a public/internal URL.
+      - BACKEND_URL=
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

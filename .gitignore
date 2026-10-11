@@ -1,0 +1,61 @@
+# ─── Java / Maven ─────────────────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+.factorypath
+*.sublime-project
+*.sublime-workspace
+
+# VS Code
+.vscode/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+# Do not ignore Dockerfiles – they must be tracked
+# Ignore any local .env overrides
+.env
+.env.local
+.env.*.local
+
+# ─── Node (if any frontend tooling is added later) ────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── AWS / credentials ────────────────────────────────────────────────────────
+# Never commit credentials or secrets
+*.pem
+*.key
+credentials
+.aws/
+
+# ─── Build artifacts ──────────────────────────────────────────────────────────
+imagedefinitions.json
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
