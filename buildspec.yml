@@ -1,0 +1,130 @@
+version: 0.2
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DevBank Microservices — AWS CodeBuild buildspec
+#
+# Required CodeBuild environment variables (set in CodeBuild project or
+# CodePipeline pipeline):
+#
+#   AWS_DEFAULT_REGION  — e.g. us-east-1
+#   AWS_ACCOUNT_ID      — resolved dynamically below; can also be set explicitly
+#   FRONTEND_REPOSITORY — ECR repository name for the frontend image
+#   BACKEND_REPOSITORY  — ECR repository name for the backend image
+#
+# The buildspec does NOT hardcode any AWS account IDs, region names, or
+# repository URIs.  All values come from environment variables or are resolved
+# at build time via aws sts get-caller-identity.
+# ──────────────────────────────────────────────────────────────────────────────
+
+env:
+  variables:
+    # These are sensible defaults that can be overridden in the CodeBuild project
+    FRONTEND_REPOSITORY: "devbank-frontend"
+    BACKEND_REPOSITORY:  "devbank-backend"
+  # AWS_DEFAULT_REGION is automatically set by CodeBuild.
+  # AWS_ACCOUNT_ID can be set here or resolved dynamically in pre_build.
+
+phases:
+
+  # ── Install phase ──────────────────────────────────────────────────────────
+  install:
+    runtime-versions:
+      java: corretto17
+    commands:
+      - echo "=== Install phase ==="
+      - java -version
+      - mvn -version
+      - docker --version
+      - aws --version
+
+  # ── Pre-build phase ────────────────────────────────────────────────────────
+  pre_build:
+    commands:
+      - echo "=== Pre-build phase ==="
+
+      # Resolve AWS account ID dynamically so nothing is hardcoded
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - echo "AWS Account ID  : $AWS_ACCOUNT_ID"
+      - echo "AWS Region      : $AWS_DEFAULT_REGION"
+
+      # Derive ECR registry URL
+      - export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+      - echo "ECR Registry    : $ECR_REGISTRY"
+
+      # Use the short Git commit hash as the image tag for traceability
+      - export IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c1-8)
+      - echo "Image tag       : $IMAGE_TAG"
+
+      # Authenticate Docker to ECR
+      - echo "Authenticating with Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | \
+          docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      # Run backend unit tests before building images
+      - echo "Running backend unit tests..."
+      - cd backend && mvn test && cd ..
+
+  # ── Build phase ────────────────────────────────────────────────────────────
+  build:
+    commands:
+      - echo "=== Build phase ==="
+      - echo "Build started on $(date)"
+
+      # ── Backend image ──────────────────────────────────────────────────────
+      - echo "Building backend Docker image..."
+      - docker build -t $BACKEND_REPOSITORY:$IMAGE_TAG ./backend
+      - docker tag  $BACKEND_REPOSITORY:$IMAGE_TAG \
+            $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG
+      - docker tag  $BACKEND_REPOSITORY:$IMAGE_TAG \
+            $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
+
+      # ── Frontend image ─────────────────────────────────────────────────────
+      - echo "Building frontend Docker image..."
+      - docker build -t $FRONTEND_REPOSITORY:$IMAGE_TAG ./frontend
+      - docker tag  $FRONTEND_REPOSITORY:$IMAGE_TAG \
+            $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG
+      - docker tag  $FRONTEND_REPOSITORY:$IMAGE_TAG \
+            $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
+
+  # ── Post-build phase ───────────────────────────────────────────────────────
+  post_build:
+    commands:
+      - echo "=== Post-build phase ==="
+      - echo "Build completed on $(date)"
+
+      # Push backend image
+      - echo "Pushing backend image to ECR..."
+      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/$BACKEND_REPOSITORY:latest
+
+      # Push frontend image
+      - echo "Pushing frontend image to ECR..."
+      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG
+      - docker push $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest
+
+      # ── Write imagedefinitions.json for CodeDeploy ECS rolling deployments ─
+      # CodeDeploy/ECS expects a file listing the container name and the new
+      # image URI so it knows what to update in the Task Definition.
+      # Two separate files are written — one per service — so CodePipeline
+      # can fan out to two separate ECS deploy actions.
+      - echo "Writing imagedefinitions files..."
+
+      - printf '[{"name":"backend","imageUri":"%s"}]' \
+            "$ECR_REGISTRY/$BACKEND_REPOSITORY:$IMAGE_TAG" \
+            > imagedefinitions-backend.json
+
+      - printf '[{"name":"frontend","imageUri":"%s"}]' \
+            "$ECR_REGISTRY/$FRONTEND_REPOSITORY:$IMAGE_TAG" \
+            > imagedefinitions-frontend.json
+
+      - cat imagedefinitions-backend.json
+      - cat imagedefinitions-frontend.json
+      - echo "Build and push complete."
+
+# ── Artifacts ─────────────────────────────────────────────────────────────────
+# These files are passed downstream to the CodeDeploy / ECS deploy actions
+# in the CodePipeline.
+artifacts:
+  files:
+    - imagedefinitions-backend.json
+    - imagedefinitions-frontend.json

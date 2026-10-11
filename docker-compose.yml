@@ -1,0 +1,66 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# DevBank Microservices — Docker Compose
+#
+# Services:
+#   backend   — Spring Boot REST API (port 8080)
+#   frontend  — Node.js/Express UI     (port 3000)
+#
+# The frontend resolves the backend using the Docker Compose service name
+# "backend", which maps to the backend container on the internal network.
+# BACKEND_URL is passed as an environment variable so the Node server can
+# expose it to the browser via GET /config.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Backend ────────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: devbank-backend:local
+    container_name: devbank-backend
+    ports:
+      - "8081:8080"      # exposed to host for direct API testing (8080 used by Jenkins)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - devbank-net
+    restart: unless-stopped
+
+  # ── Frontend ───────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: devbank-frontend:local
+    container_name: devbank-frontend
+    ports:
+      - "3001:3000"      # exposed to host (3000 used by Grafana)
+    environment:
+      # The browser-side JS calls /config to get this value, then makes
+      # fetch() requests directly to the backend.
+      # For Docker Compose, the Docker internal hostname "backend" resolves
+      # to the backend container.
+      - BACKEND_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - devbank-net
+    restart: unless-stopped
+
+# ── Network ─────────────────────────────────────────────────────────────────
+networks:
+  devbank-net:
+    driver: bridge
